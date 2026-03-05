@@ -2,7 +2,7 @@ import random
 import math
 import time
 import os
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Manager
 
 PHI = (1 + math.sqrt(5)) / 2
 
@@ -131,36 +131,71 @@ def load_files(filename, cls):
         lines = map(str.strip, f)
         return [cls(*line.split()) for line in lines if line]
 
-def examiner_process(examiner, queue, questions):
+def examiner_process(examiner, queue, questions, students_state, examiners_state):
     while True:
         student = queue.get()
         if student is None:
             break
         print(f"{examiner.name} принимает {student.name}")
-        examiner.examine_student(student, questions)
+
+        #Статус экзаменатора в начале
+        tmp_state_ex = dict(examiners_state[examiner.name])
+        tmp_state_ex["current_student"] = student.name
+        tmp_state_ex["total_students"] += 1
+        examiners_state[examiner.name] = tmp_state_ex
+
+        res = examiner.examine_student(student, questions)
         duration = examiner.exam_duration()
         time.sleep(duration)
+
+        #Статус экзаменатора в конце
+        tmp_state_ex = dict(examiners_state[examiner.name])
+        tmp_state_ex["current_student"] = "-"
+        if not res:
+            tmp_state_ex["failed"] += 1
+        examiners_state[examiner.name] = tmp_state_ex
+        ##TIME?????
+        #Статус student в конце
+        tmp_state_st = dict(students_state[student.name])
+        if res:
+            tmp_state_st["status"] = "Сдал"
+        else:
+            tmp_state_st["status"] = "Провалил"
+        students_state[student.name] = tmp_state_st
+
         print(f"{examiner.name} закончил принимать {student.name}")
         examiner.check_lunch_break()
         #+ОБРАБОТКА ОШИБОК!!!!!!!
 
 def run_exam():
     Examiner.exam_start_time = time.time()
-    print(Examiner.exam_start_time)
+
     students = load_files("students.txt", Student)
     examiners = load_files("examiners.txt", Examiner)
     questions = Question("questions.txt")
     queue = Queue()
+    manager = Manager()
+    students_state = manager.dict()
+    examiners_state = manager.dict()
 
     for student in students:
         queue.put(student)
+        students_state[student.name] = {
+            "status": "Очередь"
+        }
     for _ in examiners:
         queue.put(None)
+        examiners_state[examiner.name] = {
+            "current_student": "-",
+            "total_students": 0,
+            "failed": 0,
+            "work_time": time.time() - Examiner.exam_start_time
+        }
 
     processes = []
 
     for examiner in examiners:
-        p = Process(target=examiner_process, args=(examiner, queue,  questions))
+        p = Process(target=examiner_process, args=(examiner, queue,  questions, students_state, examiners_state))
         p.start()
         processes.append(p)
 
@@ -171,5 +206,6 @@ def run_exam():
     print(time.time() - Examiner.exam_start_time)
 
 
+#WINDOWS + ????
 if __name__ == "__main__":
     run_exam()
