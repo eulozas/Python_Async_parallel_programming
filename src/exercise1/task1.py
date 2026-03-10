@@ -20,6 +20,10 @@ def golden_prob(n):
 
 class Student:
     def __init__(self, name, gender):
+        if not name:
+            raise ValueError("Некорректное имя студента")
+        if gender not in {"М", "Ж"}:
+            raise ValueError("Некорректный пол студента")
         self.name = name
         self.gender = gender
 
@@ -36,6 +40,10 @@ class Examiner:
     exam_start_time = None
 
     def __init__(self, name, gender):
+        if not name:
+            raise ValueError("Некорректное имя экзаменатора")
+        if gender not in {"М", "Ж"}:
+            raise ValueError("Некорректный пол экзаменатора")
         self.name = name
         self.gender = gender
         self.lunch = 0 #может не хранить?
@@ -85,13 +93,15 @@ class Examiner:
     def examine_student(self, student, questions):
         q = questions.get_random_questions(3)
         results = []
+        question_results = []
         for i, question in enumerate(q, 1):
             student_answer = student.give_answer(question)
             correct_answers = self.give_correct_answer(question)
             decision = self.make_decision(student_answer, correct_answers)
             results.append(decision)
+            question_results.append((question, decision))
         final_result = sum(results)
-        return final_result >= 2
+        return final_result >= 2, question_results
 
 class Question:
     def __init__(self, filename):
@@ -99,6 +109,8 @@ class Question:
         file_path = os.path.join(dir, filename)
         with open(file_path, "r", encoding="utf-8") as f:
             self.questions = [line.strip() for line in f if line.strip()]
+        if not self.questions:
+            raise ValueError("Файл вопросов пуст или содержит только пустые строки")
 
     def get_random_questions(self, n):
         if n > len(self.questions):
@@ -107,14 +119,23 @@ class Question:
 
 
 def load_files(filename, cls):
-    #+ОБРАБОТКА ОШИБОК!!!!!!!
     dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(dir, filename)
     with open(file_path, "r", encoding="utf-8") as f:
-        lines = map(str.strip, f)
-        return [cls(*line.split()) for line in lines if line]
+        lines = [line.strip() for line in f]
+    entries = []
+    for i, line in enumerate(lines, 1):
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) != 2:
+            raise ValueError(f"Некорректная строка в {filename}:{i}")
+        entries.append(cls(*parts))
+    if not entries:
+        raise ValueError(f"Файл {filename} пуст или содержит только пустые строки")
+    return entries
 
-def examiner_process(examiner, queue, questions, students_state, examiners_state):
+def examiner_process(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock):
     while True:
         student = queue.get()
         if student is None:
@@ -128,7 +149,7 @@ def examiner_process(examiner, queue, questions, students_state, examiners_state
         tmp_state_ex["current_student"] = student.name
         examiners_state[examiner.name] = tmp_state_ex
 
-        res = examiner.examine_student(student, questions)
+        res, question_results = examiner.examine_student(student, questions)
         duration = examiner.exam_duration()
         time.sleep(duration)
 
@@ -149,9 +170,14 @@ def examiner_process(examiner, queue, questions, students_state, examiners_state
             tmp_state_st["status"] = "Провалил"
         students_state[student.name] = tmp_state_st
 
+        # Статистика по вопросам
+        for question, decision in question_results:
+            if decision:
+                with question_state_lock:
+                    question_state[question] = question_state.get(question, 0) + 1
+
         examiner.check_lunch_break()
 
-        #+ОБРАБОТКА ОШИБОК!!!!!!!
 
 def run_exam():
     Examiner.exam_start_time = time.monotonic()
@@ -163,6 +189,8 @@ def run_exam():
     manager = Manager()
     students_state = manager.dict()
     examiners_state = manager.dict()
+    question_state = manager.dict()
+    question_state_lock = manager.Lock()
 
     for student in students:
         queue.put(student)
@@ -180,15 +208,20 @@ def run_exam():
             "start_time": Examiner.exam_start_time,
             "finish_time": None
         }
+    for question in questions.questions:
+        question_state[question] = 0
 
     processes = []
     for examiner in examiners:
-        p = Process(target=examiner_process, args=(examiner, queue,  questions, students_state, examiners_state))
+        p = Process(
+            target=examiner_process,
+            args=(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock)
+        )
         p.start()
         processes.append(p)
     print_status_process = Process(
         target=print_status,
-        args=(students_state, examiners_state,
+        args=(students_state, examiners_state, question_state,
               Examiner.exam_start_time, len(students))
     )
     print_status_process.start()
@@ -197,7 +230,7 @@ def run_exam():
     print_status_process.join()
 
 
-def print_status(students_state, examiners_state, exam_start_time, total_students):
+def print_status(students_state, examiners_state, question_state, exam_start_time, total_students):
 
     while True:
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -320,6 +353,16 @@ def print_status(students_state, examiners_state, exam_start_time, total_student
     print(f"Имена студентов, которых после экзамена отчислят: {expelled_student}")
 
     #Добавить статистику по лучшим вопросам______________________________________
+    if question_state:
+        max_correct = max(question_state.values())
+        if max_correct > 0:
+            best_questions = [q for q, cnt in question_state.items() if cnt == max_correct]
+            best_question_str = ", ".join(best_questions)
+        else:
+            best_question_str = "-"
+    else:
+        best_question_str = "-"
+    print(f"Лучший вопрос: {best_question_str}")
 
     passed_count = len(passed_students)
     failed_count = len(failed_students)
