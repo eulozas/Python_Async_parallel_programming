@@ -18,6 +18,7 @@ def golden_prob(n):
     weight_list.append(rest)
     return weight_list
 
+#____КЛАССЫ_____
 class Student:
     def __init__(self, name, gender):
         if not name:
@@ -36,9 +37,7 @@ class Student:
         return res
 
 class Examiner:
-
     exam_start_time = None
-
     def __init__(self, name, gender):
         if not name:
             raise ValueError("Некорректное имя экзаменатора")
@@ -46,7 +45,7 @@ class Examiner:
             raise ValueError("Некорректный пол экзаменатора")
         self.name = name
         self.gender = gender
-        self.lunch = 0 #может не хранить?
+        self.lunch = 0 
 
     def check_lunch_break(self):
         if not self.lunch and time.monotonic() - self.exam_start_time >= 15: #ИЗМЕНИТЬ на 30!!!
@@ -117,7 +116,7 @@ class Question:
             raise ValueError("Запрошено больше вопросов, чем есть в банке")
         return random.sample(self.questions, n)
 
-
+#__________Вспомогательные функции____________
 def load_files(filename, cls):
     dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(dir, filename)
@@ -135,56 +134,69 @@ def load_files(filename, cls):
         raise ValueError(f"Файл {filename} пуст или содержит только пустые строки")
     return entries
 
-def examiner_process(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock):
-    while True:
-        student = queue.get()
-        if student is None:
+def examiner_process(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock, exam_start_time):
+    # Важно для Windows (spawn): передаем время старта явно
+    examiner.exam_start_time = exam_start_time
+    try:
+        while True:
+            student = queue.get()
+            if student is None:
+                tmp_state_ex = dict(examiners_state[examiner.name])
+                tmp_state_ex["finish_time"] = time.monotonic()
+                examiners_state[examiner.name] = tmp_state_ex
+                break
+
+            #Статус экзаменатора в начале
             tmp_state_ex = dict(examiners_state[examiner.name])
-            tmp_state_ex["finish_time"] = time.monotonic()
+            tmp_state_ex["current_student"] = student.name
             examiners_state[examiner.name] = tmp_state_ex
-            break
 
-        #Статус экзаменатора в начале
-        tmp_state_ex = dict(examiners_state[examiner.name])
-        tmp_state_ex["current_student"] = student.name
-        examiners_state[examiner.name] = tmp_state_ex
+            res, question_results = examiner.examine_student(student, questions)
+            duration = examiner.exam_duration()
+            time.sleep(duration)
 
-        res, question_results = examiner.examine_student(student, questions)
-        duration = examiner.exam_duration()
-        time.sleep(duration)
+            #Статус экзаменатора в конце
+            tmp_state_ex = dict(examiners_state[examiner.name])
+            tmp_state_ex["total_students"] += 1
+            tmp_state_ex["current_student"] = "-"
+            if not res:
+                tmp_state_ex["failed"] += 1
+            examiners_state[examiner.name] = tmp_state_ex
+            
+            #Статус student в конце
+            tmp_state_st = dict(students_state[student.name])
+            tmp_state_st["finish_time"] = time.monotonic()
+            if res:
+                tmp_state_st["status"] = "Сдал"
+            else:
+                tmp_state_st["status"] = "Провалил"
+            students_state[student.name] = tmp_state_st
 
-        #Статус экзаменатора в конце
-        tmp_state_ex = dict(examiners_state[examiner.name])
-        tmp_state_ex["total_students"] += 1
+            #Статистика по вопросам
+            for question, decision in question_results:
+                if decision:
+                    with question_state_lock:
+                        question_state[question] = question_state.get(question, 0) + 1
+
+            examiner.check_lunch_break()
+    except Exception:
+        tmp_state_ex = dict(examiners_state.get(examiner.name, {}))
         tmp_state_ex["current_student"] = "-"
-        if not res:
-            tmp_state_ex["failed"] += 1
+        tmp_state_ex["finish_time"] = time.monotonic()
         examiners_state[examiner.name] = tmp_state_ex
-        
-        #Статус student в конце
-        tmp_state_st = dict(students_state[student.name])
-        tmp_state_st["finish_time"] = time.monotonic()
-        if res:
-            tmp_state_st["status"] = "Сдал"
-        else:
-            tmp_state_st["status"] = "Провалил"
-        students_state[student.name] = tmp_state_st
+        raise
 
-        # Статистика по вопросам
-        for question, decision in question_results:
-            if decision:
-                with question_state_lock:
-                    question_state[question] = question_state.get(question, 0) + 1
-
-        examiner.check_lunch_break()
-
-
+#_______Главный процесс экзамена________
 def run_exam():
     Examiner.exam_start_time = time.monotonic()
 
     students = load_files("students.txt", Student)
     examiners = load_files("examiners.txt", Examiner)
     questions = Question("questions.txt")
+    if not students:
+        raise ValueError("Нет студентов для экзамена")
+    if not examiners:
+        raise ValueError("Нет экзаменаторов для экзамена")
     queue = Queue()
     manager = Manager()
     students_state = manager.dict()
@@ -204,7 +216,6 @@ def run_exam():
             "current_student": "-",
             "total_students": 0,
             "failed": 0,
-            #"lunch_time": 0.0,
             "start_time": Examiner.exam_start_time,
             "finish_time": None
         }
@@ -215,7 +226,7 @@ def run_exam():
     for examiner in examiners:
         p = Process(
             target=examiner_process,
-            args=(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock)
+            args=(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock, Examiner.exam_start_time)
         )
         p.start()
         processes.append(p)
@@ -229,7 +240,7 @@ def run_exam():
         p.join()
     print_status_process.join()
 
-
+#_______Функция вывода статистики(информации о ходе и результатах экзамена)________
 def print_status(students_state, examiners_state, question_state, exam_start_time, total_students):
 
     while True:
@@ -278,7 +289,7 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
 
         print(table_examiners)
 
-        # Доп. строки
+        #Доп. строки
         remaining = sum(1 for s in students_state.values()
                         if s["status"] == "Очередь")
 
@@ -296,6 +307,7 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
 
     #Финальный вывод
 
+    #Таблица студенты
     table_students = PrettyTable()
     table_students.field_names = ["Студент", "Статус"]
     passed = []
@@ -309,6 +321,7 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
         table_students.add_row(row)
     print(table_students)
 
+    #Таблица экзаменаторы
     table_examiners = PrettyTable()
     table_examiners.field_names = [
         "Экзаменатор",
@@ -328,9 +341,11 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
         ])
     print(table_examiners)
 
+    #Время экзамена
     total_exam_time = round(time.monotonic() - exam_start_time, 2)
     print(f"\nВремя с момента начала экзамена и до момента его завершения: {total_exam_time}")
 
+    #Лучшие студенты
     passed_students = [name for name, data in students_state.items() if data["status"] == "Сдал"]
     if passed_students:
         best_student = min(passed_students, key=lambda name: students_state[name]["finish_time"])
@@ -338,6 +353,7 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
         best_student = "-"
     print(f"Имена лучших студентов: {best_student}")
 
+    #Лучшие экзаменаторы
     min_failed = min(data["failed"] for data in examiners_state.values())
     best_examiners = [
         name for name, data in examiners_state.items()
@@ -345,6 +361,7 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
     ]
     print(f"Имена лучших экзаменаторов: {', '.join(best_examiners)}")
 
+    #Отчисление
     failed_students = [name for name, data in students_state.items() if data["status"] == "Провалил"]
     if failed_students:
         expelled_student = min(failed_students, key=lambda name: students_state[name]["finish_time"])
@@ -352,7 +369,7 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
         expelled_student = "-"
     print(f"Имена студентов, которых после экзамена отчислят: {expelled_student}")
 
-    #Добавить статистику по лучшим вопросам______________________________________
+    #Лучшие вопросы
     if question_state:
         max_correct = max(question_state.values())
         if max_correct > 0:
@@ -364,6 +381,7 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
         best_question_str = "-"
     print(f"Лучший вопрос: {best_question_str}")
 
+    #Итог экзамента
     passed_count = len(passed_students)
     failed_count = len(failed_students)
     total = passed_count + failed_count
@@ -373,6 +391,5 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
         result = "экзамен не удался"
     print(f"Вывод: {result}")
 
-#WINDOWS + ????
 if __name__ == "__main__":
     run_exam()
