@@ -81,8 +81,7 @@ class Examiner:
         else:
             return "good"
 
-    def make_decision(self, answer, correct_answer):
-        mood = self.get_mood()
+    def make_decision(self, answer, correct_answer, mood):
         if mood == "bad":
             return False
         elif mood == "good":
@@ -96,12 +95,13 @@ class Examiner:
 
     def examine_student(self, student, questions):
         q = questions.get_random_questions(3)
+        mood = self.get_mood()
         results = []
         question_results = []
         for i, question in enumerate(q, 1):
             student_answer = student.give_answer(question)
             correct_answers = self.give_correct_answer(question)
-            decision = self.make_decision(student_answer, correct_answers)
+            decision = self.make_decision(student_answer, correct_answers, mood)
             results.append(decision)
             question_results.append((question, decision))
         final_result = sum(results)
