@@ -221,7 +221,7 @@ def examiner_process(
         tmp_state_ex["current_student"] = "-"
         tmp_state_ex["finish_time"] = time.monotonic()
         examiners_state[examiner.name] = tmp_state_ex
-        raise
+        sys.exit(1)
 
 
 # _______Главный процесс экзамена________
