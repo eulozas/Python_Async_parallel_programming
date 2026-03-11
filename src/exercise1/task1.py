@@ -135,6 +135,18 @@ def load_participants(filename, cls):
         raise ValueError(f"Файл {filename} пуст или содержит только пустые строки")
     return participants_list
 
+def check_duplicates(items, get_name, label):
+    seen = set()
+    duplicates = []
+    for item in items:
+        key = get_name(item)
+        if key in seen and key not in duplicates:
+            duplicates.append(key)
+        seen.add(key)
+    if duplicates:
+        dup_str = ", ".join(duplicates)
+        raise ValueError(f"Дубли {label}: {dup_str}")
+
 def examiner_process(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock, exam_start_time, error_queue):
     examiner.exam_start_time = exam_start_time
     try:
@@ -200,6 +212,10 @@ def run_exam():
     students = load_participants("students.txt", Student)
     examiners = load_participants("examiners.txt", Examiner)
     questions = Question("questions.txt")
+
+    check_duplicates(students, lambda s: s.name, "студентов")
+    check_duplicates(examiners, lambda e: e.name, "экзаменаторов")
+    check_duplicates(questions.questions, lambda q: q, "вопросов")
     
     queue = Queue()
     error_queue = Queue()
