@@ -1,6 +1,7 @@
 import random
 import math
 import time
+import sys
 import os
 from prettytable import PrettyTable
 from multiprocessing import Process, Queue, Manager
@@ -117,25 +118,24 @@ class Question:
         return random.sample(self.questions, n)
 
 #__________Вспомогательные функции____________
-def load_files(filename, cls):
+def load_participants(filename, cls):
     dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(dir, filename)
     with open(file_path, "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f]
-    entries = []
+    participants_list = []
     for i, line in enumerate(lines, 1):
         if not line:
             continue
         parts = line.split()
         if len(parts) != 2:
             raise ValueError(f"Некорректная строка в {filename}:{i}")
-        entries.append(cls(*parts))
-    if not entries:
+        participants_list.append(cls(*parts))
+    if not participants_list:
         raise ValueError(f"Файл {filename} пуст или содержит только пустые строки")
-    return entries
+    return participants_list
 
-def examiner_process(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock, exam_start_time):
-    # Важно для Windows (spawn): передаем время старта явно
+def examiner_process(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock, exam_start_time, error_queue):
     examiner.exam_start_time = exam_start_time
     try:
         while True:
@@ -179,8 +179,15 @@ def examiner_process(examiner, queue, questions, students_state, examiners_state
                         question_state[question] = question_state.get(question, 0) + 1
 
             examiner.check_lunch_break()
+    except ValueError as e:
+        error_queue.put(str(e))
+        tmp_state_ex = dict(examiners_state[examiner.name])
+        tmp_state_ex["current_student"] = "-"
+        tmp_state_ex["finish_time"] = time.monotonic()
+        examiners_state[examiner.name] = tmp_state_ex
+        sys.exit(1)
     except Exception:
-        tmp_state_ex = dict(examiners_state.get(examiner.name, {}))
+        tmp_state_ex = dict(examiners_state[examiner.name])
         tmp_state_ex["current_student"] = "-"
         tmp_state_ex["finish_time"] = time.monotonic()
         examiners_state[examiner.name] = tmp_state_ex
@@ -190,14 +197,12 @@ def examiner_process(examiner, queue, questions, students_state, examiners_state
 def run_exam():
     Examiner.exam_start_time = time.monotonic()
 
-    students = load_files("students.txt", Student)
-    examiners = load_files("examiners.txt", Examiner)
+    students = load_participants("students.txt", Student)
+    examiners = load_participants("examiners.txt", Examiner)
     questions = Question("questions.txt")
-    if not students:
-        raise ValueError("Нет студентов для экзамена")
-    if not examiners:
-        raise ValueError("Нет экзаменаторов для экзамена")
+    
     queue = Queue()
+    error_queue = Queue()
     manager = Manager()
     students_state = manager.dict()
     examiners_state = manager.dict()
@@ -223,21 +228,36 @@ def run_exam():
         question_state[question] = 0
 
     processes = []
+
     for examiner in examiners:
         p = Process(
             target=examiner_process,
-            args=(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock, Examiner.exam_start_time)
+            args=(examiner, queue, questions, students_state, examiners_state, question_state, question_state_lock, Examiner.exam_start_time, error_queue)
         )
         p.start()
         processes.append(p)
+
     print_status_process = Process(
         target=print_status,
         args=(students_state, examiners_state, question_state,
               Examiner.exam_start_time, len(students))
     )
+
     print_status_process.start()
-    for p in processes: #+ОБРАБОТКА ОШИБОК!!!!!!!
+    for p in processes: 
         p.join()
+        if p.exitcode and p.exitcode != 0:
+            for other in processes:
+                if other.is_alive():
+                    other.terminate()
+            if print_status_process.is_alive():
+                print_status_process.terminate()
+            for other in processes:
+                other.join()
+            print_status_process.join()
+            if not error_queue.empty():
+                raise ValueError(error_queue.get())
+            raise RuntimeError(f"Процесс экзаменатора завершился с кодом {p.exitcode}")
     print_status_process.join()
 
 #_______Функция вывода статистики(информации о ходе и результатах экзамена)________
@@ -392,4 +412,8 @@ def print_status(students_state, examiners_state, question_state, exam_start_tim
     print(f"Вывод: {result}")
 
 if __name__ == "__main__":
-    run_exam()
+    try:
+        run_exam()
+    except (ValueError, RuntimeError) as e:
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print(str(e))
