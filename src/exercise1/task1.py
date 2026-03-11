@@ -423,17 +423,27 @@ def print_status(
         name for name, data in students_state.items() if data["status"] == "Сдал"
     ]
     if passed_students:
-        best_student = min(
-            passed_students, key=lambda name: students_state[name]["finish_time"]
-        )
+        min_time = min(students_state[name]["finish_time"] for name in passed_students)
+        best_students = [
+            name
+            for name in passed_students
+            if students_state[name]["finish_time"] == min_time
+        ]
+        best_student_str = ", ".join(best_students)
     else:
-        best_student = "-"
-    print(f"Имена лучших студентов: {best_student}")
+        best_student_str = "-"
+    print(f"Имена лучших студентов: {best_student_str}")
 
     # Лучшие экзаменаторы
-    min_failed = min(data["failed"] for data in examiners_state.values())
+    min_rate = min(
+        (data["failed"] / data["total_students"] if data["total_students"] else 0)
+        for data in examiners_state.values()
+    )
     best_examiners = [
-        name for name, data in examiners_state.items() if data["failed"] == min_failed
+        name
+        for name, data in examiners_state.items()
+        if (data["failed"] / data["total_students"] if data["total_students"] else 0)
+        == min_rate
     ]
     print(f"Имена лучших экзаменаторов: {', '.join(best_examiners)}")
 
