@@ -6,15 +6,24 @@ from urllib.parse import urlparse
 class DownloadImg:
     def __init__(self, my_path):
         self.my_path = my_path
+        self.success = []
+        self.failed = []
 
     def download(self, url):
-          response = requests.get(url)
-          filename = self.get_filename(url)
-          file_path = os.path.join(self.my_path, filename)
-          with open(file_path, 'wb') as f:
-            f.write(response.content)
+        try:
+            response = requests.get(url)
+            if response.status_code != 200:
+                raise Exception
+            filename = self.get_filename(url)
+            file_path = os.path.join(self.my_path, filename)
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+            self.success.append(url)
+        except Exception as e:
+            self.failed.append((url, str(e)))
+
     
-    #может стат мемтод????
+    #может стат метод????
     def get_filename(self, url):
         parsed = urlparse(url)
         name = os.path.basename(parsed.path)
@@ -24,15 +33,34 @@ class DownloadImg:
 
 
 def get_path():
-    path = input("Введите путь для сохранения изображений: ").strip()
-    return path
+    while True:
+        path = input("Введите путь для сохранения изображений: ").strip()
+        try:
+            test_file = os.path.join(path, "test.tmp")
+            with open(test_file, "wb") as f:
+                f.write(b"test")
+            os.remove(test_file)
+            return path
+        except PermissionError:
+            print("Нет прав на запись в эту папку")
+        except FileNotFoundError:
+            print("Путь не существует")
 
 
 def main():
     path = get_path()
     downloader = DownloadImg(path)
-    url = "https://images2.pics4learning.com/catalog/s/swamp_15.jpg"
-    downloader.download(url)
+
+    print("Введите ссылки на изображения (пустая строка для завершения):")
+    while True:
+        url = input().strip()
+        if url == "":
+            break
+        downloader.download(url)
+    #https://images2.pics4learning.com/catalog/s/swamp_15.jpg
+    #https://bad-link-no-website-here.strange/img.png
+    #https://images2.pics4learning.com/catalog/p/parrot.jpg
+    
 
 
 if __name__ == "__main__":
