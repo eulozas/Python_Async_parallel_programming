@@ -2,6 +2,7 @@ import asyncio
 import requests
 import os
 from urllib.parse import urlparse
+from prettytable import PrettyTable
 
 class DownloadImg:
     def __init__(self, my_path):
@@ -9,6 +10,8 @@ class DownloadImg:
         self.success = []
         self.failed = []
         self.tasks = []
+        self.urls = []
+        self.status = {}
 
     def download(self, url):
         try:
@@ -20,13 +23,16 @@ class DownloadImg:
             with open(file_path, 'wb') as f:
                 f.write(response.content)
             self.success.append(url)
+            self.status[url] = "Успех"
         except Exception as e:
             self.failed.append((url, str(e)))
+            self.status[url] = "Ошибка"
 
     async def download_task(self, url):  # асинхронная обертка, создаем потоки
         await asyncio.to_thread(self.download, url)
     
     def download_async(self, url):
+        self.urls.append(url)
         task = asyncio.create_task(self.download_task(url))
         self.tasks.append(task)
 
@@ -51,6 +57,16 @@ class DownloadImg:
             'failed': self.failed,
             'total': len(self.tasks)
         }
+
+    def print_results_table(self):
+        table = PrettyTable()
+        table.field_names = ["Ссылка", "Статус"]
+        table.align["Ссылка"] = "l"
+        table.align["Статус"] = "l"
+        for url in self.urls:
+            status = self.status.get(url, "Ошибка")
+            table.add_row([url, status])
+        print(table)
 
 def get_path():
     while True:
@@ -82,8 +98,7 @@ async def main():
         print(f"Ожидание {downloader.get_pending_count()} загрузок...")
         await downloader.wait_all()
     
-    results = downloader.get_results()
-    print(f"Успешно: {len(results['success'])}")
+    downloader.print_results_table()
     
 if __name__ == "__main__":
     asyncio.run(main())
