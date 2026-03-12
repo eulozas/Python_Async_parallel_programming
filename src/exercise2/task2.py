@@ -8,11 +8,11 @@ class DownloadImg:
         self.my_path = my_path
         self.success = []
         self.failed = []
-        self.task = []
+        self.tasks = []
 
     def download(self, url):
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=10)
             if response.status_code != 200:
                 raise Exception
             filename = self.get_filename(url)
@@ -23,8 +23,12 @@ class DownloadImg:
         except Exception as e:
             self.failed.append((url, str(e)))
 
-    async def download_async(self, url):  # асинхронная обертка, создаем потоки
+    async def download_task(self, url):  # асинхронная обертка, создаем потоки
         await asyncio.to_thread(self.download, url)
+    
+    def download_async(self, url):
+        task = asyncio.create_task(self.download_task(url))
+        self.tasks.append(task)
 
     #может стат метод????
     def get_filename(self, url):
@@ -33,7 +37,20 @@ class DownloadImg:
         if not name or '.' not in name:
             name = f"image_{len(self.success) + len(self.failed) + 1}.jpg"
         return name
-
+    
+    def get_pending_count(self):
+        return sum(1 for t in self.tasks if not t.done())
+    
+    async def wait_all(self):
+        if self.tasks:
+            await asyncio.gather(*self.tasks, return_exceptions=True)
+    
+    def get_results(self):
+        return {
+            'success': self.success,
+            'failed': self.failed,
+            'total': len(self.tasks)
+        }
 
 def get_path():
     while True:
@@ -53,19 +70,21 @@ def get_path():
 async def main():
     path = get_path()
     downloader = DownloadImg(path)
-    tasks = []
 
     print("Введите ссылки на изображения (пустая строка для завершения):")
     while True:
-        url = input().strip()
+        url = (await asyncio.to_thread(input)).strip()
         if url == "":
             break
-        task = asyncio.create_task(downloader.download_async(url))    
-        tasks.append(task)
- 
+        downloader.download_async(url)
     
-    await asyncio.gather(*tasks, return_exceptions=True)
-
+    if downloader.get_pending_count() > 0:
+        print(f"Ожидание {downloader.get_pending_count()} загрузок...")
+        await downloader.wait_all()
+    
+    results = downloader.get_results()
+    print(f"Успешно: {len(results['success'])}")
+    
 if __name__ == "__main__":
     asyncio.run(main())
 
