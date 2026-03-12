@@ -1,6 +1,7 @@
 import asyncio
 import requests
 import os
+from urllib.parse import urlparse
 
 class DownloadImg:
     def __init__(self, my_path):
@@ -8,10 +9,18 @@ class DownloadImg:
 
     def download(self, url):
           response = requests.get(url)
-          filename = "sdfsd.jpg"
+          filename = self.get_filename(url)
           file_path = os.path.join(self.my_path, filename)
           with open(file_path, 'wb') as f:
             f.write(response.content)
+    
+    #может стат мемтод????
+    def get_filename(self, url):
+        parsed = urlparse(url)
+        name = os.path.basename(parsed.path)
+        if not name:
+            name = f"image_1.jpg" #пересмотреть название????
+        return name
 
 
 def get_path():
