@@ -8,6 +8,7 @@ class DownloadImg:
         self.my_path = my_path
         self.success = []
         self.failed = []
+        self.task = []
 
     def download(self, url):
         try:
@@ -22,13 +23,15 @@ class DownloadImg:
         except Exception as e:
             self.failed.append((url, str(e)))
 
-    
+    async def download_async(self, url):  # асинхронная обертка, создаем потоки
+        await asyncio.to_thread(self.download, url)
+
     #может стат метод????
     def get_filename(self, url):
         parsed = urlparse(url)
         name = os.path.basename(parsed.path)
-        if not name:
-            name = f"image_1.jpg" #пересмотреть название????
+        if not name or '.' not in name:
+            name = f"image_{len(self.success) + len(self.failed) + 1}.jpg"
         return name
 
 
@@ -47,21 +50,25 @@ def get_path():
             print("Путь не существует")
 
 
-def main():
+async def main():
     path = get_path()
     downloader = DownloadImg(path)
+    tasks = []
 
     print("Введите ссылки на изображения (пустая строка для завершения):")
     while True:
         url = input().strip()
         if url == "":
             break
-        downloader.download(url)
-    #https://images2.pics4learning.com/catalog/s/swamp_15.jpg
-    #https://bad-link-no-website-here.strange/img.png
-    #https://images2.pics4learning.com/catalog/p/parrot.jpg
+        task = asyncio.create_task(downloader.download_async(url))    
+        tasks.append(task)
+ 
     
-
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
+
+   #https://images2.pics4learning.com/catalog/s/swamp_15.jpg
+    #https://bad-link-no-website-here.strange/img.png
+    #https://images2.pics4learning.com/catalog/p/parrot.jpg
