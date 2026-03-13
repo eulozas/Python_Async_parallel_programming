@@ -4,6 +4,7 @@ import os
 from urllib.parse import urlparse
 from prettytable import PrettyTable
 
+
 class DownloadImg:
     def __init__(self, my_path):
         self.my_path = my_path
@@ -18,7 +19,7 @@ class DownloadImg:
                 raise Exception
             filename = self.get_filename(url)
             file_path = os.path.join(self.my_path, filename)
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 f.write(response.content)
             self.status[url] = "Успех"
         except Exception as e:
@@ -26,7 +27,7 @@ class DownloadImg:
 
     async def download_task(self, url):  # асинхронная обертка, создаем потоки
         await asyncio.to_thread(self.download, url)
-    
+
     def download_async(self, url):
         self.urls.append(url)
         task = asyncio.create_task(self.download_task(url))
@@ -35,17 +36,16 @@ class DownloadImg:
     def get_filename(self, url):
         parsed = urlparse(url)
         name = os.path.basename(parsed.path)
-        if not name or '.' not in name:
+        if not name or "." not in name:
             name = f"image_{len(self.urls) + 1}.jpg"
         return name
-    
+
     def get_pending_count(self):
         return sum(1 for t in self.tasks if not t.done())
-    
+
     async def wait_all(self):
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
-    
 
     def print_results_table(self):
         table = PrettyTable()
@@ -56,6 +56,7 @@ class DownloadImg:
             status = self.status.get(url, "Ошибка")
             table.add_row([url, status])
         print(table)
+
 
 def get_path():
     while True:
@@ -82,16 +83,17 @@ async def main():
         if url == "":
             break
         downloader.download_async(url)
-    
+
     if downloader.get_pending_count() > 0:
         print(f"Ожидание {downloader.get_pending_count()} загрузок...")
         await downloader.wait_all()
-    
+
     downloader.print_results_table()
-    
+
+
 if __name__ == "__main__":
     asyncio.run(main())
 
-#https://images2.pics4learning.com/catalog/s/swamp_15.jpg
-#https://bad-link-no-website-here.strange/img.png
-#https://images2.pics4learning.com/catalog/p/parrot.jpg
+# https://images2.pics4learning.com/catalog/s/swamp_15.jpg
+# https://bad-link-no-website-here.strange/img.png
+# https://images2.pics4learning.com/catalog/p/parrot.jpg
