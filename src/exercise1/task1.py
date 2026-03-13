@@ -279,6 +279,7 @@ def run_exam():
         p.start()
         processes.append(p)
 
+    students_order = [s.name for s in students]
     print_status_process = Process(
         target=print_status,
         args=(
@@ -287,6 +288,7 @@ def run_exam():
             question_state,
             Examiner.exam_start_time,
             len(students),
+            students_order,
         ),
     )
 
@@ -310,7 +312,12 @@ def run_exam():
 
 # _______Функция вывода статистики(информации о ходе и результатах экзамена)________
 def print_status(
-    students_state, examiners_state, question_state, exam_start_time, total_students
+    students_state,
+    examiners_state,
+    question_state,
+    exam_start_time,
+    total_students,
+    students_order,
 ):
 
     while True:
@@ -322,7 +329,8 @@ def print_status(
         passed = []
         failed = []
 
-        for name, data in students_state.items():
+        for name in students_order:
+            data = students_state[name]
             if data["status"] == "Очередь":
                 queue.append((name, data["status"]))
             elif data["status"] == "Сдал":
@@ -366,7 +374,7 @@ def print_status(
 
         print(f"\nОсталось в очереди: {remaining} из {total_students}")
         print(
-            f"Время с начала экзамена: {round(time.monotonic() - exam_start_time, 2)} сек"
+            f"Время с начала экзамена: {round(time.monotonic() - exam_start_time, 2)}"
         )
 
         all_finished = all(
@@ -387,7 +395,8 @@ def print_status(
     table_students.field_names = ["Студент", "Статус"]
     passed = []
     failed = []
-    for name, data in students_state.items():
+    for name in students_order:
+        data = students_state[name]
         if data["status"] == "Сдал":
             passed.append((name, data["status"]))
         else:
@@ -471,7 +480,7 @@ def print_status(
             best_question_str = "-"
     else:
         best_question_str = "-"
-    print(f"Лучший вопрос: {best_question_str}")
+    print(f"Лучшие вопросы: {best_question_str}")
 
     # Итог экзамента
     passed_count = len(passed_students)
