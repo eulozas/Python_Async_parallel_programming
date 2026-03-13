@@ -7,8 +7,6 @@ from prettytable import PrettyTable
 class DownloadImg:
     def __init__(self, my_path):
         self.my_path = my_path
-        self.success = []
-        self.failed = []
         self.tasks = []
         self.urls = []
         self.status = {}
@@ -22,10 +20,8 @@ class DownloadImg:
             file_path = os.path.join(self.my_path, filename)
             with open(file_path, 'wb') as f:
                 f.write(response.content)
-            self.success.append(url)
             self.status[url] = "Успех"
         except Exception as e:
-            self.failed.append((url, str(e)))
             self.status[url] = "Ошибка"
 
     async def download_task(self, url):  # асинхронная обертка, создаем потоки
@@ -36,12 +32,11 @@ class DownloadImg:
         task = asyncio.create_task(self.download_task(url))
         self.tasks.append(task)
 
-    #может стат метод????
     def get_filename(self, url):
         parsed = urlparse(url)
         name = os.path.basename(parsed.path)
         if not name or '.' not in name:
-            name = f"image_{len(self.success) + len(self.failed) + 1}.jpg"
+            name = f"image_{len(self.urls) + 1}.jpg"
         return name
     
     def get_pending_count(self):
@@ -51,12 +46,6 @@ class DownloadImg:
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
     
-    def get_results(self):
-        return {
-            'success': self.success,
-            'failed': self.failed,
-            'total': len(self.tasks)
-        }
 
     def print_results_table(self):
         table = PrettyTable()
@@ -103,6 +92,6 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
-   #https://images2.pics4learning.com/catalog/s/swamp_15.jpg
-    #https://bad-link-no-website-here.strange/img.png
-    #https://images2.pics4learning.com/catalog/p/parrot.jpg
+#https://images2.pics4learning.com/catalog/s/swamp_15.jpg
+#https://bad-link-no-website-here.strange/img.png
+#https://images2.pics4learning.com/catalog/p/parrot.jpg
