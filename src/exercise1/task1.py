@@ -461,12 +461,18 @@ def print_status(
         name for name, data in students_state.items() if data["status"] == "Провалил"
     ]
     if failed_students:
-        expelled_student = min(
-            failed_students, key=lambda name: students_state[name]["finish_time"]
-        )
+        min_time = min(students_state[name]["finish_time"] for name in failed_students)
+        expelled_students = [
+            name
+            for name in failed_students
+            if students_state[name]["finish_time"] == min_time
+        ]
+        expelled_student_str = ", ".join(expelled_students)
     else:
-        expelled_student = "-"
-    print(f"Имена студентов, которых после экзамена отчислят: {expelled_student}")
+        expelled_student_str = "-"
+    print(
+        f"Имена студентов, которых после экзамена отчислят: {expelled_student_str}"
+    )
 
     # Лучшие вопросы
     if question_state:
